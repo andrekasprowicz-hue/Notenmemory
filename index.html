@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Noten-Memory – C-Dur</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:16px;min-height:100vh;background:#f2f5fb;color:#182238;font-family:system-ui,Arial,sans-serif;display:flex;justify-content:center;align-items:center}
+main{width:min(900px,100%);background:white;border-radius:24px;padding:clamp(16px,4vw,30px);box-shadow:0 12px 40px #1c2a4515}
+header,.stats,.controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{font-size:clamp(1.5rem,4vw,2.2rem);margin:0}
+.tag{background:#e8efff;color:#2853a6;border-radius:99px;padding:7px 12px;font-weight:750;font-size:.85rem}
+.intro{color:#65718a;line-height:1.45;margin:10px 0 18px}.stats{justify-content:flex-start;margin-bottom:15px}
+.stat{background:#f1f4fa;border-radius:12px;padding:9px 13px;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.card{border:2px solid #dfe5f0;background:#eaf0fb;border-radius:16px;min-height:132px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;touch-action:manipulation}
+.card:active{transform:scale(.98)}.card:focus-visible{outline:4px solid #f2c94c;outline-offset:2px}
+.back{font-size:2.4rem;color:#4264a6;font-weight:900}.face{display:none;width:100%;height:100%;min-height:128px;align-items:center;justify-content:center;background:#fff;padding:6px}
+.card.revealed,.card.matched{background:#fff;border-color:#6c8fd6}.card.revealed .back,.card.matched .back{display:none}
+.card.revealed .face,.card.matched .face{display:flex}.card.matched{border-color:#23a36b;background:#f0fbf5;cursor:default}.card.matched .face{background:#f0fbf5}
+.letter{font-size:clamp(2.8rem,8vw,4.5rem);font-weight:800;color:#243d70}.staff-svg{width:100%;max-width:205px;height:auto;display:block}
+.controls{margin-top:18px}.message{color:#56627a;font-weight:650;min-height:1.5em}
+button.reset{background:#2859bd;color:white;border:0;border-radius:13px;padding:13px 18px;font-size:1rem;font-weight:750;cursor:pointer}
+.complete{display:none;margin-top:18px;background:#effaf4;border:1px solid #bce8ce;padding:16px;border-radius:16px;text-align:center;line-height:1.5}.complete strong{color:#167647;font-size:1.2rem}
+.note-hint{font-size:.88rem;color:#778198;margin-top:14px}
+@media(max-width:600px){body{padding:8px}.grid{gap:8px}.card{min-height:105px;border-radius:12px}.face{min-height:101px;padding:2px}.staff-svg{max-width:150px}}
+@media(max-width:380px){.grid{gap:6px}.card{min-height:88px}.face{min-height:84px}.staff-svg{max-width:125px}}
+</style></head><body><main>
+<header><h1>🎼 Noten-Memory</h1><span class="tag">C-Dur · 16 Karten</span></header>
+<p class="intro">Finde die passenden Paare: Zu jedem Notenbuchstaben gehört die gleiche Note in der fünfzeiligen Noten-Lineatur. Tippe immer zwei Karten an.</p>
+<div class="stats"><div class="stat">Gefundene Paare: <span id="pairs">0</span> / 8</div><div class="stat">Versuche: <span id="moves">0</span></div></div>
+<div class="grid" id="grid" aria-label="Memory-Spiel mit 16 Karten"></div>
+<div class="controls"><div class="message" id="message" aria-live="polite">Viel Erfolg beim Suchen!</div><button class="reset" id="reset" type="button">↻ Neu mischen</button></div>
+<div class="complete" id="complete"><strong>🎉 Alle acht Paare gefunden!</strong><br>Super gespielt! Du kennst die Töne der C-Dur-Tonleiter.</div>
+<p class="note-hint">Die Noten stehen im Violinschlüssel. In der deutschen Notennamen-Schreibweise heißt der siebte Ton H.</p>
+</main>
+<script>
+(function(){
+"use strict";
+const notes=[
+{name:"C",pitch:"C4",y:95},{name:"D",pitch:"D4",y:87.5},{name:"E",pitch:"E4",y:80},{name:"F",pitch:"F4",y:72.5},
+{name:"G",pitch:"G4",y:65},{name:"A",pitch:"A4",y:57.5},{name:"H",pitch:"H4",y:50},{name:"C",pitch:"C5",y:42.5}
+];
+let deck=[],first=null,second=null,locked=false,moves=0,pairs=0;
+const el=id=>document.getElementById(id);
+function shuffle(a){const b=a.slice();for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+function staffSVG(n){
+const lines=[20,35,50,65,80].map(y=>`<line x1="42" y1="${y}" x2="194" y2="${y}" stroke="#26354f" stroke-width="1.5"/>`).join("");
+const ledger=n.y>=95?'<line x1="96" y1="95" x2="137" y2="95" stroke="#26354f" stroke-width="1.7"/>':"";
+return `<svg class="staff-svg" viewBox="0 0 210 116" role="img" aria-label="Note ${n.pitch} im Violinschlüssel">
+${lines}<text x="5" y="78" font-size="62" font-family="serif" fill="#26354f">𝄞</text>${ledger}
+<ellipse cx="116" cy="${n.y}" rx="9.5" ry="6.8" transform="rotate(-18 116 ${n.y})" fill="#172238"/>
+<line x1="124" y1="${n.y-2}" x2="124" y2="${n.y-37}" stroke="#172238" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+}
+function makeCard(item,index){
+const b=document.createElement("button");b.type="button";b.className="card";b.setAttribute("aria-label","Verdeckte Memory-Karte");
+const face=item.type==="letter"?`<div class="face"><span class="letter">${item.note.name}</span></div>`:`<div class="face">${staffSVG(item.note)}</div>`;
+b.innerHTML=`<span class="back">♪</span>${face}`;b.addEventListener("click",()=>flip(b,index));return b;
+}
+function stats(){el("pairs").textContent=pairs;el("moves").textContent=moves;}
+function flip(button,index){
+if(locked||button.classList.contains("revealed")||button.classList.contains("matched"))return;
+button.classList.add("revealed");
+if(first===null){first={button,index};return;}
+second={button,index};moves++;stats();
+const a=deck[first.index],b=deck[second.index];
+if(a.pairId===b.pairId&&a.type!==b.type){
+first.button.classList.remove("revealed");second.button.classList.remove("revealed");
+first.button.classList.add("matched");second.button.classList.add("matched");
+first.button.disabled=true;second.button.disabled=true;pairs++;stats();
+el("message").textContent="Richtig! Das ist ein Notenpaar.";first=null;second=null;
+if(pairs===8){el("complete").style.display="block";el("message").textContent="Alle Paare gefunden!";}
+}else{
+locked=true;el("message").textContent="Das ist noch kein Paar. Versuch es weiter!";
+const aButton=first.button,bButton=second.button;
+window.setTimeout(()=>{aButton.classList.remove("revealed");bButton.classList.remove("revealed");first=null;second=null;locked=false;},1000);
+}
+}
+function start(){
+const items=[];notes.forEach((note,i)=>{items.push({pairId:i,type:"letter",note});items.push({pairId:i,type:"staff",note});});
+deck=shuffle(items);first=null;second=null;locked=false;moves=0;pairs=0;el("grid").innerHTML="";el("complete").style.display="none";el("message").textContent="Viel Erfolg beim Suchen!";
+deck.forEach((item,index)=>el("grid").appendChild(makeCard(item,index)));stats();
+}
+el("reset").addEventListener("click",start);start();
+})();
+</script></body></html>
